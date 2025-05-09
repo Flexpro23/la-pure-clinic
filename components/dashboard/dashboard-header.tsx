@@ -67,7 +67,7 @@ export default function DashboardHeader() {
           <div className="hidden md:flex items-center mr-4">
             <div className="flex items-center bg-green-50 text-green-700 px-3 py-1 rounded-full">
               <Wallet className="h-4 w-4 mr-1" />
-              <span className="font-medium">${userData?.balance || 0}</span>
+              <span className="font-medium">${(userData?.balance || 0).toFixed(2)}</span>
             </div>
           </div>
 
@@ -88,7 +88,7 @@ export default function DashboardHeader() {
                 </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem>
-                  <Wallet className="mr-2 h-4 w-4" /> Balance: ${userData?.balance || 0}
+                  <Wallet className="mr-2 h-4 w-4" /> Balance: ${(userData?.balance || 0).toFixed(2)}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSettingsClick}>
@@ -106,7 +106,7 @@ export default function DashboardHeader() {
             {/* Balance Display (Mobile) */}
             <div className="flex items-center bg-green-50 text-green-700 px-2 py-1 rounded-full mr-2">
               <Wallet className="h-3 w-3 mr-1" />
-              <span className="text-sm font-medium">${userData?.balance || 0}</span>
+              <span className="text-sm font-medium">${(userData?.balance || 0).toFixed(2)}</span>
             </div>
             
             <Button variant="ghost" size="sm" onClick={() => setIsMenuOpen(!isMenuOpen)}>

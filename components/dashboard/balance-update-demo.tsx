@@ -84,7 +84,7 @@ export default function BalanceUpdateDemo() {
             </Button>
           </div>
           <div className="text-sm text-slate-500">
-            Current balance: <span className="font-medium">${userData?.balance || 0}</span>
+            Current balance: <span className="font-medium">${(userData?.balance || 0).toFixed(2)}</span>
           </div>
         </div>
       </CardContent>

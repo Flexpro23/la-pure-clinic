@@ -1,5 +1,8 @@
+// Determine if we're in development mode
+const isDevelopment = process.env.NODE_ENV === 'development';
+
 // Gemini API client setup
-const GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+const GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY || (isDevelopment ? "AIzaSyBOlZSEpVPyidZN84POQju5wGjmVVIUlZ0" : undefined);
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent";
 
 /**

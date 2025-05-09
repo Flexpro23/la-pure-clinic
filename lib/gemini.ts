@@ -1,5 +1,5 @@
 // Gemini API client setup
-const GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "AIzaSyBOlZSEpVPyidZN84POQju5wGjmVVIUlZ0";
+const GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent";
 
 /**
@@ -9,6 +9,10 @@ const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/
  */
 export async function generateWithGemini(prompt: string) {
   try {
+    if (!GEMINI_API_KEY) {
+      throw new Error("Gemini API key is not configured");
+    }
+    
     const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
       method: "POST",
       headers: {

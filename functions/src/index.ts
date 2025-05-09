@@ -21,8 +21,8 @@ interface GenerateNewLookResponse {
   message?: string;
 }
 
-// Use the provided API key
-const GEMINI_API_KEY = 'AIzaSyCX6MTCqXqXdjYEL8loEaJu8mF8wYKdNIs';
+// Read API key from environment variables
+const GEMINI_API_KEY = process.env.FUNCTIONS_GEMINI_API_KEY;
 
 /**
  * Cloud function to generate a new hair look using Gemini API

@@ -15,7 +15,7 @@ import HairlineSelector from "@/components/case/hairline-selector"
 import HairstylePreview from "@/components/case/hairstyle-preview"
 import { useLanguage } from "@/contexts/language-context"
 import { useFirebase } from "@/contexts/firebase-context"
-import { addDoc, updateDoc, collection, doc } from "firebase/firestore"
+import { addDoc, updateDoc, collection, doc, serverTimestamp } from "firebase/firestore"
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage"
 import { toast } from "sonner"
 import Image from "next/image"
@@ -80,6 +80,18 @@ const hairstyleTypes = [
   }
 ]
 
+interface HairlineInfo {
+  id: string;
+  title: string;
+  description: string;
+}
+
+interface HairstyleInfo {
+  id: string;
+  title: string;
+  description: string;
+}
+
 /**
  * Convert a File object to a base64 string
  */
@@ -115,6 +127,18 @@ export default function NewSimulationForm() {
   const [selectedHairstyle, setSelectedHairstyle] = useState("")
   const [clientDocId, setClientDocId] = useState<string | null>(null)
   const [showReportConfirmation, setShowReportConfirmation] = useState(false)
+  const [showAIConfirmation, setShowAIConfirmation] = useState(false)
+  const [clientInfoSaved, setClientInfoSaved] = useState(false)
+  const [hairlineInfo, setHairlineInfo] = useState<HairlineInfo>({
+    id: "ai-selected",
+    title: "AI Selected",
+    description: "Selected by AI based on facial analysis"
+  })
+  const [hairstyleInfo, setHairstyleInfo] = useState<HairstyleInfo>({
+    id: "ai-selected",
+    title: "AI Selected",
+    description: "Selected by AI based on facial analysis"
+  })
 
   // Get the full hairline and hairstyle info based on selection
   const selectedHairlineInfo = hairlineTypes.find(h => h.id === selectedHairline)
@@ -460,6 +484,154 @@ export default function NewSimulationForm() {
     handleSubmit();
   };
 
+  // Add a new function to handle AI-based selection
+  const handleGenerateWithAIClick = () => {
+    console.log("Generate With AI button clicked");
+    setShowAIConfirmation(true);
+  };
+
+  // Handler for AI confirmation dialog
+  const handleConfirmAI = async () => {
+    try {
+      if (!clientDocId || !frontImageBase64) {
+        throw new Error("Missing required data");
+      }
+
+      // Save client info and upload image if not already done
+      if (!clientInfoSaved) {
+        await saveClientInfo();
+        setClientInfoSaved(true);
+      }
+
+      // Create custom prompt for AI analysis
+      const customPrompt = `
+Generate a comprehensive hair transplant consultation report based on the following client information and the attached image.
+
+Client Information:
+- Name: ${clientInfo.name}
+- Age: ${clientInfo.age}
+- Gender: ${clientInfo.gender || 'Not specified'}
+- Phone: ${clientInfo.phoneNumber || 'Not provided'}
+- Email: ${clientInfo.emailAddress || 'Not provided'}
+- Notes: ${clientInfo.notes || 'None'}
+
+Please analyze the client's image and provide:
+1. A detailed assessment of their current hair pattern and loss
+2. Recommendations for the most suitable hairline shape based on their facial features
+3. Suggestions for the most flattering hairstyle considering their age, face shape, and overall appearance
+4. Specific hair characteristics (color, texture, density) that would best complement their features
+
+The report should be comprehensive and include:
+- Detailed analysis of current hair pattern and loss
+- Specific recommendations for hairline shape and hairstyle
+- Hair characteristics that would best suit the client
+- Expected results and special considerations
+
+Return the report in valid JSON format with the following structure:
+{
+  "clientInformation": {
+    "name": "${clientInfo.name}",
+    "age": ${typeof clientInfo.age === 'number' ? clientInfo.age : `"${clientInfo.age}"`},
+    "gender": "${clientInfo.gender || 'Not specified'}",
+    "phoneNumber": "${clientInfo.phoneNumber || 'Not provided'}",
+    "emailAddress": "${clientInfo.emailAddress || 'Not provided'}"
+  },
+  "hairLossAssessment": {
+    "pattern": "string - Norwood/Ludwig scale classification",
+    "severity": {
+      "score": number - from 1-10,
+      "category": "string - Mild/Moderate/Severe"
+    },
+    "hairlineRecession": "string - detailed description",
+    "crownThinning": "string - detailed description",
+    "overallDensity": "string - detailed description",
+    "distinctiveCharacteristics": "string - any notable characteristics"
+  },
+  "characteristics": {
+    "hairColor": "string - specific shade",
+    "hairTexture": "string - straight/wavy/curly/coily",
+    "hairThickness": "string - fine/medium/coarse",
+    "hairDensity": "string - sparse/medium/dense",
+    "faceShape": "string - detailed analysis",
+    "scalpCondition": "string - observations",
+    "growthPattern": "string - observations"
+  },
+  "recommendations": {
+    "approach": "string - detailed recommended approach",
+    "graftCount": number - estimated grafts required,
+    "specialConsiderations": "string - any special notes for this client",
+    "expectedResults": "string - what the client can expect from treatment"
+  },
+  "summary": "string - a brief 2-3 sentence summary of the overall assessment and recommendation"
+}`;
+
+      // Create a simpler image prompt for AI generation
+      const imagePrompt = `
+Create a photorealistic hair transplant simulation for a ${clientInfo.age} year old ${clientInfo.gender || 'person'}.
+
+Key Requirements:
+- Preserve the client's facial features and expression
+- Maintain the same camera angle and perspective
+- Keep any existing eyewear or accessories
+- Match the lighting and background of the original image
+
+Hair Design:
+1. Analyze the client's facial features and current hair pattern to determine the optimal hairline shape
+2. Consider the client's face shape, age, and overall appearance to create the most flattering hairstyle
+3. Match the hair color and texture to any existing hair, or choose a natural shade that complements their features
+4. Create a realistic, high-quality hair transplant effect with natural density and growth patterns
+
+The goal is to show how the client would look with their new hair while maintaining their natural appearance and style.`;
+
+      // Generate report with AI analysis
+      const result = await generateHairTransplantReport(
+        clientInfo,
+        hairlineInfo,
+        hairstyleInfo,
+        frontImageBase64,
+        customPrompt,
+        imagePrompt
+      );
+
+      if (!result.success) {
+        throw new Error("Failed to generate report");
+      }
+
+      // Update client document with generated report
+      if (clientDocId) {
+        await updateDoc(doc(db, "clients", clientDocId), {
+          report: result.report,
+          imagePrompt: result.imagePrompt,
+          reportGeneratedAt: serverTimestamp(),
+          reportGenerated: true,
+          selectedHairline: hairlineInfo,
+          selectedHairstyle: hairstyleInfo
+        });
+      }
+
+      // Charge user for the service
+      if (user) {
+        try {
+          await chargeUserForService(user.uid, 0.16, 'report_generation');
+        } catch (error) {
+          console.error("Error charging user:", error);
+          // Continue with report generation even if charging fails
+        }
+      }
+
+      toast.success("Report generated successfully!");
+      if (clientDocId) {
+        router.push(`/dashboard/${clientDocId}/report`);
+      }
+    } catch (error: any) {
+      console.error("Error generating report:", error);
+      toast.error(error.message || "Failed to generate report");
+    } finally {
+      setIsLoading(false);
+      setShowAIConfirmation(false);
+    }
+  };
+
   return (
     <>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -772,19 +944,34 @@ export default function NewSimulationForm() {
                       Debug
                     </Button>
                   </div>
-                  <Button 
-                    onClick={handleGenerateReportClick} 
-                    disabled={isLoading || !isTabComplete()}
-                    className="bg-blue-600 hover:bg-blue-700 text-white"
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t("processing")}
-                      </>
-                    ) : (
-                      "Generate Report"
-                    )}
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button 
+                      onClick={handleGenerateReportClick} 
+                      disabled={isLoading || !isTabComplete()}
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t("processing")}
+                        </>
+                      ) : (
+                        "Generate Report"
+                      )}
+                    </Button>
+                    <Button 
+                      onClick={handleGenerateWithAIClick} 
+                      disabled={isLoading || !isTabComplete()}
+                      className="bg-purple-600 hover:bg-purple-700 text-white"
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t("processing")}
+                        </>
+                      ) : (
+                        "Generate With AI"
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -833,6 +1020,17 @@ export default function NewSimulationForm() {
         onClose={() => setShowReportConfirmation(false)}
         onConfirm={handleConfirmReport}
         title="Generate AI Hair Consultation Report"
+        description="You are about to generate an AI-powered hair transplant consultation report based on the client's photos and selected options."
+        costRange="$0.10-$0.20"
+        exactCost={0.16}
+      />
+
+      {/* Confirmation Dialog for AI Analysis */}
+      <ConfirmationDialog
+        isOpen={showAIConfirmation}
+        onClose={() => setShowAIConfirmation(false)}
+        onConfirm={handleConfirmAI}
+        title="AI Analysis Confirmation"
         description="You are about to generate an AI-powered hair transplant consultation report based on the client's photos and selected options."
         costRange="$0.10-$0.20"
         exactCost={0.16}

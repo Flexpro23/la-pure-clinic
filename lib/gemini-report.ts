@@ -28,7 +28,9 @@ export async function generateHairTransplantReport(
   clientInfo: ClientInfo,
   hairlineInfo: HairlineInfo,
   hairstyleInfo: HairstyleInfo,
-  imageBase64: string
+  imageBase64: string,
+  customPrompt?: string,
+  customImagePrompt?: string
 ) {
   try {
     // Try to get API key from env vars, fallback to hardcoded key
@@ -49,7 +51,7 @@ export async function generateHairTransplantReport(
     });
 
     console.log("Preparing report prompt for client:", clientInfo.name);
-    const reportPrompt = `
+    const reportPrompt = customPrompt || `
 Generate a comprehensive hair transplant consultation report based on the following client information and the attached image. 
 
 Client name: ${clientInfo.name}
@@ -105,7 +107,7 @@ Ensure all values are appropriate for the client based on the image and provided
 `;
 
     // For the image generation prompt (not part of the visible report, store separately):
-    const aiImagePrompt = `
+    const aiImagePrompt = customImagePrompt || `
 Objective: Photorealistic hair transplant simulation using an input image.
 Input Client: ${clientInfo.age} year old ${clientInfo.gender || 'person'}.
 

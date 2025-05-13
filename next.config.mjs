@@ -9,6 +9,8 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  // Removing static export to allow dynamic routes
+  // output: 'export',
 }
 
 export default nextConfig

@@ -128,6 +128,7 @@ export default function NewSimulationForm() {
   const [clientDocId, setClientDocId] = useState<string | null>(null)
   const [showReportConfirmation, setShowReportConfirmation] = useState(false)
   const [showAIConfirmation, setShowAIConfirmation] = useState(false)
+  const [showStandardHairlineConfirmation, setShowStandardHairlineConfirmation] = useState(false)
   const [clientInfoSaved, setClientInfoSaved] = useState(false)
   const [hairlineInfo, setHairlineInfo] = useState<HairlineInfo>({
     id: "ai-selected",
@@ -139,6 +140,7 @@ export default function NewSimulationForm() {
     title: "AI Selected",
     description: "Selected by AI based on facial analysis"
   })
+  const [showPredefinedLineConfirmation, setShowPredefinedLineConfirmation] = useState(false)
 
   // Get the full hairline and hairstyle info based on selection
   const selectedHairlineInfo = hairlineTypes.find(h => h.id === selectedHairline)
@@ -290,7 +292,7 @@ export default function NewSimulationForm() {
     }
   }
 
-  const generateReport = async () => {
+  const generateReport = async (specialHairlineAdjustment?: "4-6cm" | "predefined-line") => {
     console.log("Generating report for client:", clientDocId);
     setIsLoading(true);
     try {
@@ -307,20 +309,87 @@ export default function NewSimulationForm() {
       console.log("Using hairline:", hairlineData.title);
       console.log("Using hairstyle:", hairstyleData.title);
 
+      // Create custom image prompt if special hairline adjustment is requested
+      let customImagePrompt: string | undefined = undefined;
+      if (specialHairlineAdjustment === "4-6cm") {
+        customImagePrompt = `
+Create a photorealistic hair transplant simulation for this client.
+
+## **CRITICAL REQUIREMENTS:**
+- **PRESERVE ALL FACIAL FEATURES INCLUDING BEARD** - client's beard, facial shape, and all proportions must remain identical
+- **MAINTAIN EXACT SKIN TONE & LIGHTING** from the original image
+- **KEEP ALL CLOTHING/ACCESSORIES** exactly as shown
+
+## **HAIRLINE SPECIFICATIONS:**
+- Create a hairline positioned at **4-6cm distance from eyebrows** (slightly lower/more youthful position)
+- Follow the **${hairlineData.title}** hairline shape specifically:
+  ${hairlineData.id === "arch" ? "* **ARCH HAIRLINE**: Soft, rounded convex curve across forehead without sharp angles" : 
+    hairlineData.id === "v-shape" ? "* **V-SHAPE HAIRLINE**: Distinct central point (widow's peak) with angular recession at temples" : 
+    hairlineData.id === "oval" ? "* **OVAL HAIRLINE**: Continuous gentle U-shaped curve from temple to temple" : 
+    "* **SEMI-V HAIRLINE**: Subtle central point with soft curves rather than sharp angles"}
+
+## **HAIR STYLING:**
+- Apply the **${hairstyleData.title}** hairstyle:
+  ${hairstyleData.id === "textured-quiff" ? "* **TEXTURED QUIFF**: Volume on top styled upward and slightly back, shorter sides" : 
+    hairstyleData.id === "angular-fringe" ? "* **ANGULAR FRINGE**: Longer top (3-4 inches) styled forward at an angle across forehead, with medium-short sides and textured, layered appearance" : 
+    "* **SLICKED-BACK UNDERCUT**: Short sides with longer top combed straight back from forehead"}
+- Match hair color and texture appropriately to complement client's features
+- Create realistic hair density appropriate for a transplant result
+
+## **IMPORTANT REMINDER:**
+The final image must show the **EXACT SAME PERSON** with their **EXACT SAME FACE AND BEARD**, just with the specified hairline and hairstyle.`;
+        console.log("Using custom 4-6cm hairline image prompt with markdown emphasis");
+      } else if (specialHairlineAdjustment === "predefined-line") {
+        customImagePrompt = `
+Create a photorealistic hair transplant simulation for this client.
+
+## **CRITICAL REQUIREMENTS:**
+- **PRESERVE ALL FACIAL FEATURES INCLUDING BEARD** - client's beard, facial shape, and all proportions must remain identical
+- **MAINTAIN EXACT SKIN TONE & LIGHTING** from the original image
+- **KEEP ALL CLOTHING/ACCESSORIES** exactly as shown
+- **REMOVE THE DRAWN LINE** - the final image should NOT show the drawn line
+
+## **HAIRLINE SPECIFICATIONS:**
+- **FOLLOW THE EXACT PRE-DRAWN HAIRLINE VISIBLE IN THE IMAGE** as a guide
+- The client's forehead has a manually drawn line indicating the desired hairline position
+- Use this line as the precise boundary for the new hairline
+- Maintain the shape, curves and exact position of this drawn line when creating the hairline
+- IMPORTANT: The drawn line itself must be completely removed/invisible in the final image
+
+## **HAIR STYLING:**
+- Apply the **${hairstyleData.title}** hairstyle:
+  ${hairstyleData.id === "textured-quiff" ? "* **TEXTURED QUIFF**: Volume on top styled upward and slightly back, shorter sides" : 
+    hairstyleData.id === "angular-fringe" ? "* **ANGULAR FRINGE**: Longer top (3-4 inches) styled forward at an angle across forehead, with medium-short sides and textured, layered appearance" : 
+    "* **SLICKED-BACK UNDERCUT**: Short sides with longer top combed straight back from forehead"}
+- Match hair color and texture appropriately to complement client's features
+- Create realistic hair density starting precisely at where the drawn line was
+- If the drawn line is faint, look carefully to identify it - it will be a thin line across the forehead
+
+## **IMPORTANT REMINDER:**
+The final image must show the **EXACT SAME PERSON** with their **EXACT SAME FACE AND BEARD**, with the new hairline following the drawn line's position but WITHOUT showing the actual drawn line itself.`;
+        console.log("Using pre-defined hairline image prompt with line removal instructions");
+      }
+
       // Generate the report using Gemini AI with the validated data
       const reportData = await generateHairTransplantReport(
         clientInfo,
         hairlineData,
         hairstyleData,
-        frontImageBase64
+        frontImageBase64,
+        "", // Empty string for custom prompt instead of undefined/null
+        customImagePrompt // Special image prompt
       );
 
-      console.log("Report generated, updating Firestore");
-      // Check if there was an error in the report generation
+      console.log("Report generated, checking for errors");
+      
+      // Check if there was an error in the report generation - IMPORTANT CHANGE
       if (reportData.error) {
-        console.warn("Generated fallback report due to error:", reportData.error);
-        toast.warning("Generated a basic report. AI processing had some issues.");
+        console.error("AI analysis failed:", reportData.error);
+        toast.error("AI analysis failed: " + reportData.error);
+        return false; // Stop here, don't save any fallback/mockup data
       }
+
+      console.log("No errors, updating Firestore");
 
       // Save the raw report text to localStorage
       try {
@@ -343,11 +412,30 @@ export default function NewSimulationForm() {
         // This is non-critical, so we continue anyway
       }
 
-      // Update the client document with the generated report
+      // Add a special note in the report based on which hairline adjustment is used
+      if (specialHairlineAdjustment === "4-6cm" && reportData.report && reportData.report.summary) {
+        // Append a note about the standard hairline adjustment
+        reportData.report.summary += " This simulation shows a hairline positioned at the 4-6cm distance from the eyebrows.";
+        
+        // If there are recommendations, add a note there too
+        if (reportData.report.recommendations && reportData.report.recommendations.specialConsiderations) {
+          reportData.report.recommendations.specialConsiderations += " This simulation specifically shows a hairline positioned at the 4-6cm distance from eyebrows to demonstrate a youthful hairline placement.";
+        }
+      } else if (specialHairlineAdjustment === "predefined-line" && reportData.report && reportData.report.summary) {
+        // Append a note about using the pre-defined hairline
+        reportData.report.summary += " This simulation shows a hairline that follows the pre-drawn line marked on the client's forehead.";
+        
+        // If there are recommendations, add a note there too
+        if (reportData.report.recommendations && reportData.report.recommendations.specialConsiderations) {
+          reportData.report.recommendations.specialConsiderations += " This simulation follows the exact hairline that was manually marked on the client's forehead by the physician.";
+        }
+      }
+
+      // Update the client document with the pre-defined line flag if applicable
       const clientDocRef = doc(db, "clients", clientDocId);
       await updateDoc(clientDocRef, {
         report: reportData.report,
-        imagePrompt: reportData.imagePrompt, // Store the image prompt for later use
+        imagePrompt: reportData.imagePrompt,
         selectedHairline: hairlineData.id,
         selectedHairstyle: hairstyleData.id,
         hairlineTitle: hairlineData.title,
@@ -358,7 +446,9 @@ export default function NewSimulationForm() {
         phoneNumber: clientInfo.phoneNumber,
         emailAddress: clientInfo.emailAddress,
         status: "completed",
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        ...(specialHairlineAdjustment === "4-6cm" ? { standardHairlineAdjustment: true } : {}),
+        ...(specialHairlineAdjustment === "predefined-line" ? { predefinedLineHairline: true } : {})
       });
 
       // If the report generation was successful, charge the user
@@ -437,15 +527,19 @@ export default function NewSimulationForm() {
       console.log("Generating report");
       // Then generate the report
       const reportSuccess = await generateReport();
-      if (reportSuccess && clientDocId) {
-        console.log("Report generation successful, redirecting to report viewer");
-        toast.success("Report completed! Redirecting to report viewer...");
-        setTimeout(() => {
-          router.push(`/dashboard/${clientDocId}/report`);
-        }, 1500); // Small delay to ensure the user sees the success message
-      } else {
+      if (!reportSuccess) {
         console.error("Report generation failed");
         throw new Error("Report generation failed");
+      }
+      
+      if (clientDocId) {
+        console.log("Report generation successful, redirecting to report viewer");
+        toast.success("Report completed! Redirecting to report viewer...");
+        
+        // Use router.push properly without setTimeout to avoid potential issues
+        router.push(`/dashboard/${clientDocId}/report`);
+      } else {
+        throw new Error("Missing client ID for redirection");
       }
     } catch (error: any) {
       console.error("Error in handleSubmit:", error.message);
@@ -488,6 +582,48 @@ export default function NewSimulationForm() {
   const handleGenerateWithAIClick = () => {
     console.log("Generate With AI button clicked");
     setShowAIConfirmation(true);
+  };
+
+  // Change this function name and all references to 4-6cm
+  const handleStandardHairlineReportClick = () => {
+    console.log("4-6cm Hairline Report button clicked");
+    setShowStandardHairlineConfirmation(true);
+  };
+
+  // Handler for standard hairline confirmation dialog
+  const handleConfirmStandardHairlineReport = async () => {
+    setShowStandardHairlineConfirmation(false);
+    toast.info("Starting 4-6cm hairline report generation...");
+    
+    try {
+      console.log("Saving hairline and hairstyle selections");
+      // First save the hairline and hairstyle selections
+      const saveSuccess = await saveHairlineAndHairstyle();
+      if (!saveSuccess) {
+        console.error("Failed to save hairline and hairstyle selections");
+        throw new Error("Failed to save hairline and hairstyle selections");
+      }
+      
+      console.log("Generating 4-6cm hairline report");
+      // Then generate the report with 4-6cm hairline adjustment
+      const reportSuccess = await generateReport("4-6cm");
+      if (!reportSuccess) {
+        console.error("4-6cm hairline report generation failed");
+        throw new Error("4-6cm hairline report generation failed");
+      }
+      
+      if (clientDocId) {
+        console.log("4-6cm hairline report generation successful, redirecting to report viewer");
+        toast.success("4-6cm hairline report completed! Redirecting to report viewer...");
+        router.push(`/dashboard/${clientDocId}/report`);
+      } else {
+        throw new Error("Missing client ID for redirection");
+      }
+    } catch (error: any) {
+      console.error("Error in handleStandardHairlineReport:", error.message);
+      toast.error(`Error: ${error.message}`);
+      setIsLoading(false);
+    }
   };
 
   // Handler for AI confirmation dialog
@@ -629,6 +765,48 @@ The goal is to show how the client would look with their new hair while maintain
     } finally {
       setIsLoading(false);
       setShowAIConfirmation(false);
+    }
+  };
+
+  // Add a new handler function for the pre-defined line button
+  const handlePredefinedLineReportClick = () => {
+    console.log("Pre-defined Line Report button clicked");
+    setShowPredefinedLineConfirmation(true);
+  };
+
+  // Handler for pre-defined line confirmation dialog
+  const handleConfirmPredefinedLineReport = async () => {
+    setShowPredefinedLineConfirmation(false);
+    toast.info("Starting pre-defined line report generation...");
+    
+    try {
+      console.log("Saving hairline and hairstyle selections");
+      // First save the hairline and hairstyle selections
+      const saveSuccess = await saveHairlineAndHairstyle();
+      if (!saveSuccess) {
+        console.error("Failed to save hairline and hairstyle selections");
+        throw new Error("Failed to save hairline and hairstyle selections");
+      }
+      
+      console.log("Generating pre-defined line hairline report");
+      // Generate the report with pre-defined hairline adjustment
+      const reportSuccess = await generateReport("predefined-line");
+      if (!reportSuccess) {
+        console.error("Pre-defined line hairline report generation failed");
+        throw new Error("Pre-defined line hairline report generation failed");
+      }
+      
+      if (clientDocId) {
+        console.log("Pre-defined line hairline report generation successful, redirecting to report viewer");
+        toast.success("Pre-defined line hairline report completed! Redirecting to report viewer...");
+        router.push(`/dashboard/${clientDocId}/report`);
+      } else {
+        throw new Error("Missing client ID for redirection");
+      }
+    } catch (error: any) {
+      console.error("Error in handlePredefinedLineReport:", error.message);
+      toast.error(`Error: ${error.message}`);
+      setIsLoading(false);
     }
   };
 
@@ -959,6 +1137,19 @@ The goal is to show how the client would look with their new hair while maintain
                       )}
                     </Button>
                     <Button 
+                      onClick={handleStandardHairlineReportClick} 
+                      disabled={isLoading || !isTabComplete()}
+                      className="bg-amber-600 hover:bg-amber-700 text-white"
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t("processing")}
+                        </>
+                      ) : (
+                        "4-6 cm"
+                      )}
+                    </Button>
+                    <Button 
                       onClick={handleGenerateWithAIClick} 
                       disabled={isLoading || !isTabComplete()}
                       className="bg-purple-600 hover:bg-purple-700 text-white"
@@ -969,6 +1160,19 @@ The goal is to show how the client would look with their new hair while maintain
                         </>
                       ) : (
                         "Generate With AI"
+                      )}
+                    </Button>
+                    <Button 
+                      onClick={handlePredefinedLineReportClick} 
+                      disabled={isLoading || !isTabComplete()}
+                      className="bg-teal-600 hover:bg-teal-700 text-white"
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t("processing")}
+                        </>
+                      ) : (
+                        "Pre-defined Line"
                       )}
                     </Button>
                   </div>
@@ -1025,6 +1229,17 @@ The goal is to show how the client would look with their new hair while maintain
         exactCost={0.16}
       />
 
+      {/* Confirmation Dialog for 4-6cm Hairline */}
+      <ConfirmationDialog
+        isOpen={showStandardHairlineConfirmation}
+        onClose={() => setShowStandardHairlineConfirmation(false)}
+        onConfirm={handleConfirmStandardHairlineReport}
+        title="Generate Report with Youthful Hairline"
+        description="You are about to generate a report with the hairline positioned at the 4-6cm distance from the eyebrows, while keeping the selected hairline shape and style."
+        costRange="$0.10-$0.20"
+        exactCost={0.16}
+      />
+
       {/* Confirmation Dialog for AI Analysis */}
       <ConfirmationDialog
         isOpen={showAIConfirmation}
@@ -1032,6 +1247,17 @@ The goal is to show how the client would look with their new hair while maintain
         onConfirm={handleConfirmAI}
         title="AI Analysis Confirmation"
         description="You are about to generate an AI-powered hair transplant consultation report based on the client's photos and selected options."
+        costRange="$0.10-$0.20"
+        exactCost={0.16}
+      />
+
+      {/* Confirmation Dialog for Pre-defined Line */}
+      <ConfirmationDialog
+        isOpen={showPredefinedLineConfirmation}
+        onClose={() => setShowPredefinedLineConfirmation(false)}
+        onConfirm={handleConfirmPredefinedLineReport}
+        title="Generate Report with Pre-defined Hairline"
+        description="You are about to generate a report with the hairline following the pre-drawn line marked on the client's forehead."
         costRange="$0.10-$0.20"
         exactCost={0.16}
       />
